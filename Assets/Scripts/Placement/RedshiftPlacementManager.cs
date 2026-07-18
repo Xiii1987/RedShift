@@ -144,6 +144,7 @@ public class RedshiftPlacementManager : MonoBehaviour
         BeginPlacement(slot.itemData);
     }
 
+
     private void BeginPlacement(RedshiftInventoryItemData itemData)
     {
         CancelPlacement(false);
@@ -195,19 +196,21 @@ public class RedshiftPlacementManager : MonoBehaviour
         ghostObject.SetActive(false);
     }
 
+
+
     public void CancelPlacement(bool clearSelection)
     {
         if (ghostObject != null)
             Destroy(ghostObject);
 
         ghostObject = null;
-        ghost = null;
-        placementDefinition = null;
-        currentOriginSlot = null;
-        currentGrid = null;
-        selectedItem = null;
-        hasValidPlacement = false;
-        footprintSlots.Clear();
+		ghost = null;
+		placementDefinition = null;
+		currentOriginSlot = null;
+		currentGrid = null;
+		selectedItem = null;
+		hasValidPlacement = false;
+		footprintSlots.Clear();
 
         if (clearSelection && hotbarInventory != null)
             hotbarInventory.ClearSelection();
@@ -220,122 +223,191 @@ public class RedshiftPlacementManager : MonoBehaviour
             rotationQuarterTurns += 4;
     }
 
-    private void UpdateGhostPosition()
+
+private void UpdateGhostPosition()
+{
+    hasValidPlacement = false;
+    currentOriginSlot = null;
+    currentGrid = null;
+    footprintSlots.Clear();
+
+    if (playerCamera == null ||
+        ghostObject == null ||
+        placementDefinition == null)
     {
-        hasValidPlacement = false;
-        currentOriginSlot = null;
-        currentGrid = null;
-        footprintSlots.Clear();
+        return;
+    }
 
-        if (playerCamera == null || ghostObject == null || placementDefinition == null)
-            return;
+    Ray ray = new(
+        playerCamera.transform.position,
+        playerCamera.transform.forward);
 
-        Ray ray = new(playerCamera.transform.position, playerCamera.transform.forward);
+    if (!Physics.Raycast(
+            ray,
+            out RaycastHit hit,
+            placementDistance,
+            placementSlotLayer,
+            QueryTriggerInteraction.Collide))
+    {
+        ghostObject.SetActive(false);
+        return;
+    }
 
-        if (!Physics.Raycast(ray, out RaycastHit hit, placementDistance, placementSlotLayer, QueryTriggerInteraction.Collide))
-        {
-            ghostObject.SetActive(false);
-            return;
-        }
+    RedshiftPlacementSlot originSlot =
+        hit.collider.GetComponentInParent<RedshiftPlacementSlot>();
 
-        RedshiftPlacementSlot originSlot = hit.collider.GetComponentInParent<RedshiftPlacementSlot>();
-        RedshiftPlacementGrid grid = hit.collider.GetComponentInParent<RedshiftPlacementGrid>();
+    RedshiftPlacementGrid grid =
+        hit.collider.GetComponentInParent<RedshiftPlacementGrid>();
 
-        if (originSlot == null || grid == null)
-        {
-            ghostObject.SetActive(false);
-            return;
-        }
+    if (originSlot == null || grid == null)
+    {
+        ghostObject.SetActive(false);
+        return;
+    }
 
-        ghostObject.SetActive(true);
-        currentOriginSlot = originSlot;
-        currentGrid = grid;
+    ghostObject.SetActive(true);
 
-        Quaternion rotation = Quaternion.Euler(0f, rotationQuarterTurns * 90f, 0f);
-        ghostObject.transform.SetPositionAndRotation(
-            originSlot.SnapPoint.position + rotation * placementDefinition.PlacementOffset,
-            rotation);
+    currentOriginSlot = originSlot;
+    currentGrid = grid;
 
-        bool footprintExists = grid.TryGetFootprintSlots(
+    Quaternion gridRotation =
+        Quaternion.Euler(
+            0f,
+            rotationQuarterTurns * 90f,
+            0f);
+
+    Quaternion placementRotation =
+        Quaternion.Euler(
+            placementDefinition.PlacementRotationOffset);
+
+    Quaternion finalRotation =
+        gridRotation * placementRotation;
+
+    Vector3 position =
+        originSlot.SnapPoint.position +
+        gridRotation * placementDefinition.PlacementOffset;
+
+    ghostObject.transform.SetPositionAndRotation(
+        position,
+        finalRotation);
+
+    bool footprintExists =
+        grid.TryGetFootprintSlots(
             originSlot,
             placementDefinition.Footprint,
             rotationQuarterTurns,
             footprintSlots);
 
-        hasValidPlacement = footprintExists;
+    hasValidPlacement = footprintExists;
 
-        if (hasValidPlacement)
-        {
-            foreach (RedshiftPlacementSlot slot in footprintSlots)
-            {
-                if (slot.IsOccupied)
-                {
-                    hasValidPlacement = false;
-                    break;
-                }
-            }
-        }
-
-        ghost.SetValid(hasValidPlacement);
-    }
-
-    private void TryPlaceCurrentItem()
+    if (hasValidPlacement)
     {
-        if (!hasValidPlacement || selectedItem == null || placementDefinition == null ||
-            hotbarInventory == null || !hotbarInventory.IsValidIndex(selectedHotbarIndex))
-        {
-            UISoundManager.Instance?.PlayDenied();
-            return;
-        }
-
-        RedshiftInventorySlot inventorySlot = hotbarInventory.GetSlot(selectedHotbarIndex);
-
-        if (inventorySlot == null || inventorySlot.IsEmpty || inventorySlot.itemData != selectedItem)
-        {
-            RefreshFromSelectedSlot();
-            return;
-        }
-
-        Quaternion rotation = Quaternion.Euler(0f, rotationQuarterTurns * 90f, 0f);
-        Vector3 position = currentOriginSlot.SnapPoint.position + rotation * placementDefinition.PlacementOffset;
-
-        // The real gameplay prefab is instantiated only after placement is confirmed.
-        GameObject placedObject = Instantiate(selectedItem.placeablePrefab, position, rotation);
-        RedshiftPlaceable placeable = placedObject.GetComponent<RedshiftPlaceable>();
-
-        if (placeable == null)
-        {
-            Debug.LogError($"Placed prefab '{selectedItem.placeablePrefab.name}' is missing RedshiftPlaceable.");
-            Destroy(placedObject);
-            UISoundManager.Instance?.PlayDenied();
-            return;
-        }
-
-        List<RedshiftPlacementSlot> successfullyOccupiedSlots = new();
-
         foreach (RedshiftPlacementSlot slot in footprintSlots)
         {
-            if (!slot.TryOccupy(placeable))
+            if (slot.IsOccupied)
             {
-                foreach (RedshiftPlacementSlot occupiedSlot in successfullyOccupiedSlots)
-                    occupiedSlot.Release(placeable);
+                hasValidPlacement = false;
+                break;
+            }
+        }
+    }
 
-                Destroy(placedObject);
-                UISoundManager.Instance?.PlayDenied();
-                return;
+    ghost.SetValid(hasValidPlacement);
+}
+
+
+private void TryPlaceCurrentItem()
+{
+    if (!hasValidPlacement ||
+        selectedItem == null ||
+        placementDefinition == null ||
+        hotbarInventory == null ||
+        !hotbarInventory.IsValidIndex(selectedHotbarIndex))
+    {
+        UISoundManager.Instance?.PlayDenied();
+        return;
+    }
+
+    RedshiftInventorySlot inventorySlot =
+        hotbarInventory.GetSlot(selectedHotbarIndex);
+
+    if (inventorySlot == null ||
+        inventorySlot.IsEmpty ||
+        inventorySlot.itemData != selectedItem)
+    {
+        RefreshFromSelectedSlot();
+        return;
+    }
+
+    Quaternion gridRotation =
+        Quaternion.Euler(
+            0f,
+            rotationQuarterTurns * 90f,
+            0f);
+
+    Quaternion placementRotation =
+        Quaternion.Euler(
+            placementDefinition.PlacementRotationOffset);
+
+    Quaternion finalRotation =
+        gridRotation * placementRotation;
+
+    Vector3 position =
+        currentOriginSlot.SnapPoint.position +
+        gridRotation * placementDefinition.PlacementOffset;
+
+    GameObject placedObject =
+        Instantiate(
+            selectedItem.placeablePrefab,
+            position,
+            finalRotation);
+
+    RedshiftPlaceable placeable =
+        placedObject.GetComponent<RedshiftPlaceable>();
+
+    if (placeable == null)
+    {
+        Destroy(placedObject);
+
+        Debug.LogError(
+            $"Placed prefab '{selectedItem.placeablePrefab.name}' is missing RedshiftPlaceable.");
+
+        UISoundManager.Instance?.PlayDenied();
+        return;
+    }
+
+    List<RedshiftPlacementSlot> successfullyOccupiedSlots = new();
+
+    foreach (RedshiftPlacementSlot slot in footprintSlots)
+    {
+        if (!slot.TryOccupy(placeable))
+        {
+            foreach (RedshiftPlacementSlot occupiedSlot
+                     in successfullyOccupiedSlots)
+            {
+                occupiedSlot.Release(placeable);
             }
 
-            successfullyOccupiedSlots.Add(slot);
+            Destroy(placedObject);
+
+            UISoundManager.Instance?.PlayDenied();
+            return;
         }
 
-        placeable.RegisterOccupiedSlots(successfullyOccupiedSlots);
-        hotbarInventory.RemoveAmount(selectedHotbarIndex, 1);
-        UISoundManager.Instance?.PlaySuccess();
-
-        // Inventory change refreshes automatically. If another copy remains,
-        // the ghost stays active; if the stack is empty it disappears.
-        RefreshFromSelectedSlot();
+        successfullyOccupiedSlots.Add(slot);
     }
+
+    placeable.RegisterOccupiedSlots(
+        successfullyOccupiedSlots);
+
+    hotbarInventory.RemoveAmount(
+        selectedHotbarIndex,
+        1);
+
+    UISoundManager.Instance?.PlaySuccess();
+
+    RefreshFromSelectedSlot();
+}
 
     private bool NumberKeyPressed(int slotIndex)
     {

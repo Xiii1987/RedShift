@@ -6,6 +6,9 @@ public class RedshiftPlaceable : MonoBehaviour
     [Header("Placement")]
     [SerializeField] private Vector2Int footprint = Vector2Int.one;
     [SerializeField] private Vector3 placementOffset;
+	[SerializeField] private Vector3 placementRotationOffset = new Vector3(-90f, 0f, 0f);
+
+	public Vector3 PlacementRotationOffset => placementRotationOffset;
 
     private readonly List<RedshiftPlacementSlot> occupiedSlots = new();
 
