@@ -1,0 +1,18 @@
+# REDSHIFT - OUR CODE ONLY
+
+# Ignore everything
+*
+
+# Allow Git to traverse folders
+!*/
+
+# Only track our scripts folder
+!Assets/Scripts/
+!Assets/Scripts/**/
+
+# Track C# scripts inside our scripts folder
+!Assets/Scripts/**/*.cs
+
+# Keep Git configuration
+!.gitignore
+!.gitattributes
