@@ -8,6 +8,17 @@ public class RedshiftPlaceable : MonoBehaviour
     [SerializeField] private Vector3 placementOffset;
 	[SerializeField] private Vector3 placementRotationOffset = new Vector3(-90f, 0f, 0f);
 
+	[Header("Collision Validation")]
+	[SerializeField] private Vector3 collisionCheckCenter;
+	[SerializeField] private Vector3 collisionCheckSize = Vector3.one;
+	
+	public Vector3 CollisionCheckCenter => collisionCheckCenter;
+
+	public Vector3 CollisionCheckSize => new Vector3(
+    Mathf.Max(0.01f, collisionCheckSize.x),
+    Mathf.Max(0.01f, collisionCheckSize.y),
+    Mathf.Max(0.01f, collisionCheckSize.z));
+
 	public Vector3 PlacementRotationOffset => placementRotationOffset;
 
     private readonly List<RedshiftPlacementSlot> occupiedSlots = new();

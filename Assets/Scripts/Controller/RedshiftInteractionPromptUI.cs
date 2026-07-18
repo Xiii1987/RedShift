@@ -16,18 +16,18 @@ public class RedshiftInteractionPromptUI : MonoBehaviour
     }
 
     public void Show(RedshiftInteractableInfo info)
-    {
-        if (info == null)
-        {
-            Hide();
-            return;
-        }
+	{
+		if (info == null)
+		{
+			Hide();
+			return;
+		}
 
-        promptRoot.SetActive(true);
+		promptRoot.SetActive(true);
 
-        titleText.text = info.displayName;
-        actionText.text = $"[ {info.actionText} ]";
-    }
+		titleText.text = info.DisplayName;
+		actionText.text = $"[ {info.ActionText} ]";
+	}
 
     public void Hide()
     {

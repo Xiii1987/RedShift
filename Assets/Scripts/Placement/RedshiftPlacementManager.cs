@@ -24,6 +24,9 @@ public class RedshiftPlacementManager : MonoBehaviour
 	
 	[Header("Grid Visuals")]
 	[SerializeField] private float gridDetectionRadius = 15f;
+	
+	[Header("Collision Validation")]
+	[SerializeField] private LayerMask placementBlockingLayers;
 
 	private readonly List<RedshiftPlacementGrid> activeVisualGrids = new();
 
@@ -38,6 +41,7 @@ public class RedshiftPlacementManager : MonoBehaviour
     private RedshiftPlacementGrid currentGrid;
     private int rotationQuarterTurns;
     private bool hasValidPlacement;
+	private bool placementSuspendedForUI;
 
     private void Awake()
     {
@@ -71,31 +75,46 @@ public class RedshiftPlacementManager : MonoBehaviour
         CancelPlacement(false);
     }
 
-    private void Update()
-    {
-        ResolveHotbar();
-        HandleHotbarNumberKeys();
+   private void Update()
+	{
+		ResolveHotbar();
 
-        if (ghostObject == null)
-            return;
+		// Storage/inventory UI has priority over placement controls.
+		if (RedshiftStorageRackUI.CurrentOpenContainer != null)
+		{
+			SuspendPlacementForUI();
+			return;
+		}
 
-        if (CancelPressed())
-        {
-            CancelPlacement(true);
-            return;
-        }
+		// If we have just closed the inventory UI,
+		// restore the placement visuals if placement was active.
+		if (placementSuspendedForUI)
+		{
+			ResumePlacementAfterUI();
+		}
 
-        if (RotateLeftPressed())
-            Rotate(-1);
+		HandleHotbarNumberKeys();
 
-        if (RotateRightPressed())
-            Rotate(1);
+		if (ghostObject == null)
+			return;
 
-        UpdateGhostPosition();
+		if (CancelPressed())
+		{
+			CancelPlacement(true);
+			return;
+		}
 
-        if (ConfirmPressed())
-            TryPlaceCurrentItem();
-    }
+		if (RotateLeftPressed())
+			Rotate(-1);
+
+		if (RotateRightPressed())
+			Rotate(1);
+
+		UpdateGhostPosition();
+
+		if (ConfirmPressed())
+			TryPlaceCurrentItem();
+	}
 
     private void ResolveHotbar()
     {
@@ -148,7 +167,6 @@ public class RedshiftPlacementManager : MonoBehaviour
 
         BeginPlacement(slot.itemData);
     }
-
 
     private void BeginPlacement(RedshiftInventoryItemData itemData)
     {
@@ -204,7 +222,31 @@ public class RedshiftPlacementManager : MonoBehaviour
 		ShowNearbyPlacementGrids();
     }
 
+	private void SuspendPlacementForUI()
+	{
+		if (placementSuspendedForUI)
+			return;
 
+		placementSuspendedForUI = true;
+
+		// Hide the ghost without destroying the current placement state.
+		if (ghostObject != null)
+			ghostObject.SetActive(false);
+
+		HideActivePlacementGrids();
+	}
+
+	private void ResumePlacementAfterUI()
+	{
+		placementSuspendedForUI = false;
+
+		// Only restore placement mode if there was actually
+		// an active placeable item before opening the UI.
+		if (ghostObject == null || selectedItem == null)
+			return;
+
+		ShowNearbyPlacementGrids();
+	}
 
     public void CancelPlacement(bool clearSelection)
     {
@@ -233,8 +275,29 @@ public class RedshiftPlacementManager : MonoBehaviour
             rotationQuarterTurns += 4;
     }
 
+	private bool IsPlacementBlocked(
+		Vector3 position,
+		Quaternion rotation)
+	{
+		if (placementDefinition == null)
+			return true;
 
-private void UpdateGhostPosition()
+		Vector3 worldCenter =
+			position +
+			rotation * placementDefinition.CollisionCheckCenter;
+
+		Vector3 halfExtents =
+			placementDefinition.CollisionCheckSize * 0.5f;
+
+		return Physics.CheckBox(
+			worldCenter,
+			halfExtents,
+			rotation,
+			placementBlockingLayers,
+			QueryTriggerInteraction.Ignore);
+	}
+
+	private void UpdateGhostPosition()
 {
     hasValidPlacement = false;
     currentOriginSlot = null;
@@ -310,6 +373,7 @@ private void UpdateGhostPosition()
 
     hasValidPlacement = footprintExists;
 
+    // Check whether the logical placement slot is already occupied.
     if (hasValidPlacement)
     {
         foreach (RedshiftPlacementSlot slot in footprintSlots)
@@ -322,102 +386,111 @@ private void UpdateGhostPosition()
         }
     }
 
+    // Check the actual physical volume of the object
+    // against walls, fixed props and other blocking objects.
+    if (hasValidPlacement)
+    {
+        if (IsPlacementBlocked(position, finalRotation))
+        {
+            hasValidPlacement = false;
+        }
+    }
+
     ghost.SetValid(hasValidPlacement);
 }
 
+	private void TryPlaceCurrentItem()
+	{
+		if (!hasValidPlacement ||
+			selectedItem == null ||
+			placementDefinition == null ||
+			hotbarInventory == null ||
+			!hotbarInventory.IsValidIndex(selectedHotbarIndex))
+		{
+			UISoundManager.Instance?.PlayDenied();
+			return;
+		}
 
-private void TryPlaceCurrentItem()
-{
-    if (!hasValidPlacement ||
-        selectedItem == null ||
-        placementDefinition == null ||
-        hotbarInventory == null ||
-        !hotbarInventory.IsValidIndex(selectedHotbarIndex))
-    {
-        UISoundManager.Instance?.PlayDenied();
-        return;
-    }
+		RedshiftInventorySlot inventorySlot =
+			hotbarInventory.GetSlot(selectedHotbarIndex);
 
-    RedshiftInventorySlot inventorySlot =
-        hotbarInventory.GetSlot(selectedHotbarIndex);
+		if (inventorySlot == null ||
+			inventorySlot.IsEmpty ||
+			inventorySlot.itemData != selectedItem)
+		{
+			RefreshFromSelectedSlot();
+			return;
+		}
 
-    if (inventorySlot == null ||
-        inventorySlot.IsEmpty ||
-        inventorySlot.itemData != selectedItem)
-    {
-        RefreshFromSelectedSlot();
-        return;
-    }
+		Quaternion gridRotation =
+			Quaternion.Euler(
+				0f,
+				rotationQuarterTurns * 90f,
+				0f);
 
-    Quaternion gridRotation =
-        Quaternion.Euler(
-            0f,
-            rotationQuarterTurns * 90f,
-            0f);
+		Quaternion placementRotation =
+			Quaternion.Euler(
+				placementDefinition.PlacementRotationOffset);
 
-    Quaternion placementRotation =
-        Quaternion.Euler(
-            placementDefinition.PlacementRotationOffset);
+		Quaternion finalRotation =
+			gridRotation * placementRotation;
 
-    Quaternion finalRotation =
-        gridRotation * placementRotation;
+		Vector3 position =
+			currentOriginSlot.SnapPoint.position +
+			gridRotation * placementDefinition.PlacementOffset;
 
-    Vector3 position =
-        currentOriginSlot.SnapPoint.position +
-        gridRotation * placementDefinition.PlacementOffset;
+		GameObject placedObject =
+			Instantiate(
+				selectedItem.placeablePrefab,
+				position,
+				finalRotation);
 
-    GameObject placedObject =
-        Instantiate(
-            selectedItem.placeablePrefab,
-            position,
-            finalRotation);
+		RedshiftPlaceable placeable =
+			placedObject.GetComponent<RedshiftPlaceable>();
 
-    RedshiftPlaceable placeable =
-        placedObject.GetComponent<RedshiftPlaceable>();
+		if (placeable == null)
+		{
+			Destroy(placedObject);
 
-    if (placeable == null)
-    {
-        Destroy(placedObject);
+			Debug.LogError(
+				$"Placed prefab '{selectedItem.placeablePrefab.name}' is missing RedshiftPlaceable.");
 
-        Debug.LogError(
-            $"Placed prefab '{selectedItem.placeablePrefab.name}' is missing RedshiftPlaceable.");
+			UISoundManager.Instance?.PlayDenied();
+			return;
+		}
 
-        UISoundManager.Instance?.PlayDenied();
-        return;
-    }
+		List<RedshiftPlacementSlot> successfullyOccupiedSlots = new();
 
-    List<RedshiftPlacementSlot> successfullyOccupiedSlots = new();
+		foreach (RedshiftPlacementSlot slot in footprintSlots)
+		{
+			if (!slot.TryOccupy(placeable))
+			{
+				foreach (RedshiftPlacementSlot occupiedSlot
+						 in successfullyOccupiedSlots)
+				{
+					occupiedSlot.Release(placeable);
+				}
 
-    foreach (RedshiftPlacementSlot slot in footprintSlots)
-    {
-        if (!slot.TryOccupy(placeable))
-        {
-            foreach (RedshiftPlacementSlot occupiedSlot
-                     in successfullyOccupiedSlots)
-            {
-                occupiedSlot.Release(placeable);
-            }
+				Destroy(placedObject);
 
-            Destroy(placedObject);
+				UISoundManager.Instance?.PlayDenied();
+				return;
+			}
 
-            UISoundManager.Instance?.PlayDenied();
-            return;
-        }
+			successfullyOccupiedSlots.Add(slot);
+		}
 
-        successfullyOccupiedSlots.Add(slot);
-    }
+		placeable.RegisterOccupiedSlots(
+			successfullyOccupiedSlots);
 
-    placeable.RegisterOccupiedSlots(
-        successfullyOccupiedSlots);
+		hotbarInventory.RemoveAmount(
+			selectedHotbarIndex,
+			1);
 
-    hotbarInventory.RemoveAmount(
-        selectedHotbarIndex,
-        1);
+		UISoundManager.Instance?.PlaySuccess();
 
-    UISoundManager.Instance?.PlaySuccess();
-
-    RefreshFromSelectedSlot();
-}
+		RefreshFromSelectedSlot();
+	}
 
     private bool NumberKeyPressed(int slotIndex)
     {

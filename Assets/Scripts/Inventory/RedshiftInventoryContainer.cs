@@ -75,7 +75,6 @@ public class RedshiftInventoryContainer : MonoBehaviour
         return false;
     }
 
-
     public bool RemoveAmount(int index, int amount = 1)
     {
         if (!IsValidIndex(index) || amount <= 0)
@@ -143,61 +142,59 @@ public class RedshiftInventoryContainer : MonoBehaviour
         NotifyChanged();
         targetContainer.NotifyChanged();
     }
-public int FreeSlotCount
-{
-    get
-    {
-        if (slots == null)
-            return 0;
+	
+	public int FreeSlotCount
+	{
+		get
+		{
+			if (slots == null)
+				return 0;
 
-        int freeSlots = 0;
+			int freeSlots = 0;
 
-        for (int i = 0; i < slots.Length; i++)
-        {
-            if (slots[i] == null || slots[i].IsEmpty)
-                freeSlots++;
-        }
+			for (int i = 0; i < slots.Length; i++)
+			{
+				if (slots[i] == null || slots[i].IsEmpty)
+					freeSlots++;
+			}
 
-        return freeSlots;
-    }
-}
+			return freeSlots;
+		}
+	}
 
-public bool MoveToFirstFreeSlot(
-    int fromIndex,
-    RedshiftInventoryContainer targetContainer)
-{
-    if (targetContainer == null)
-        return false;
+	public bool MoveToFirstFreeSlot(
+		int fromIndex,
+		RedshiftInventoryContainer targetContainer)
+	{
+		if (targetContainer == null)
+			return false;
 
-    if (!IsValidIndex(fromIndex))
-        return false;
+		if (!IsValidIndex(fromIndex))
+			return false;
 
-    RedshiftInventorySlot fromSlot = slots[fromIndex];
+		RedshiftInventorySlot fromSlot = slots[fromIndex];
 
-    if (fromSlot == null || fromSlot.IsEmpty)
-        return false;
+		if (fromSlot == null || fromSlot.IsEmpty)
+			return false;
 
-    for (int i = 0; i < targetContainer.SlotCount; i++)
-    {
-        RedshiftInventorySlot targetSlot = targetContainer.GetSlot(i);
+		for (int i = 0; i < targetContainer.SlotCount; i++)
+		{
+			RedshiftInventorySlot targetSlot = targetContainer.GetSlot(i);
 
-        if (targetSlot == null || !targetSlot.IsEmpty)
-            continue;
+			if (targetSlot == null || !targetSlot.IsEmpty)
+				continue;
 
-        targetSlot.Set(fromSlot.itemData, fromSlot.amount);
-        fromSlot.Clear();
+			targetSlot.Set(fromSlot.itemData, fromSlot.amount);
+			fromSlot.Clear();
 
-        NotifyChanged();
-        targetContainer.NotifyChanged();
+			NotifyChanged();
+			targetContainer.NotifyChanged();
 
-        return true;
-    }
+			return true;
+		}
 
-    return false;
-}
-
-
-
+		return false;
+	}
 
     public bool IsValidIndex(int index)
     {
@@ -205,7 +202,27 @@ public bool MoveToFirstFreeSlot(
     }
 
     public void NotifyChanged()
-    {
-        OnContentsChanged?.Invoke();
-    }
+	{
+		// If this container is the player's hotbar,
+		// make sure the currently selected slot still contains an item.
+		if (this is RedshiftHotbarInventory hotbar)
+		{
+			int selectedIndex = hotbar.SelectedSlotIndex;
+
+			if (selectedIndex >= 0)
+			{
+				RedshiftInventorySlot selectedSlot =
+					hotbar.GetSlot(selectedIndex);
+
+				if (selectedSlot == null || selectedSlot.IsEmpty)
+				{
+					hotbar.ClearSelection();
+				}
+			}
+		}
+
+		OnContentsChanged?.Invoke();
+	}
+
+
 }

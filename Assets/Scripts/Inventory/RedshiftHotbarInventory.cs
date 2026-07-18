@@ -33,16 +33,21 @@ public class RedshiftHotbarInventory : RedshiftInventoryContainer
         OnSelectedSlotChanged?.Invoke(selectedSlotIndex);
     }
 
-    protected override void Awake()
-    {
-        base.Awake();
+		protected override void Awake()
+	{
+		base.Awake();
 
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
+		if (Instance != null && Instance != this)
+		{
+			Destroy(gameObject);
+			return;
+		}
 
-        Instance = this;
-    }
+		Instance = this;
+
+		// Always start the game with no hotbar slot selected.
+		// This prevents an item picked up into slot 1 from
+		// automatically entering placement mode.
+		ClearSelection();
+	}
 }
