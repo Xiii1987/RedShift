@@ -5,14 +5,24 @@ public class RedshiftPlacementGrid : MonoBehaviour
 {
     [Header("Grid Slots")]
     [SerializeField] private RedshiftPlacementSlot[] slots;
+	
+	[Header("Grid Visual")]
+	[SerializeField] private GameObject gridVisual;
 
     private readonly Dictionary<Vector2Int, RedshiftPlacementSlot> slotLookup = new();
 
     private void Awake()
     {
         RebuildLookup();
+		SetVisualsVisible(false);
     }
 
+	public void SetVisualsVisible(bool visible)
+{
+    if (gridVisual != null)
+        gridVisual.SetActive(visible);
+}
+	
     private void OnValidate()
     {
         if (!Application.isPlaying)
@@ -91,4 +101,9 @@ public class RedshiftPlacementGrid : MonoBehaviour
             ? footprint
             : new Vector2Int(footprint.y, footprint.x);
     }
+
+
+
+
+
 }

@@ -21,6 +21,11 @@ public class RedshiftPlacementManager : MonoBehaviour
     [Header("Controls")]
     [SerializeField] private KeyCode rotateLeftKey = KeyCode.Q;
     [SerializeField] private KeyCode rotateRightKey = KeyCode.E;
+	
+	[Header("Grid Visuals")]
+	[SerializeField] private float gridDetectionRadius = 15f;
+
+	private readonly List<RedshiftPlacementGrid> activeVisualGrids = new();
 
     private readonly List<RedshiftPlacementSlot> footprintSlots = new();
 
@@ -194,12 +199,17 @@ public class RedshiftPlacementManager : MonoBehaviour
         ghostObject = ghost.gameObject;
         ghostObject.name = $"{itemData.displayName}_Ghost";
         ghostObject.SetActive(false);
+		
+		
+		ShowNearbyPlacementGrids();
     }
 
 
 
     public void CancelPlacement(bool clearSelection)
     {
+		HideActivePlacementGrids();
+		
         if (ghostObject != null)
             Destroy(ghostObject);
 
@@ -470,4 +480,49 @@ private void TryPlaceCurrentItem()
         return Input.GetKeyDown(rotateRightKey);
 #endif
     }
+
+	private void ShowNearbyPlacementGrids()
+	{
+		HideActivePlacementGrids();
+
+		if (playerCamera == null)
+			return;
+
+		Collider[] hits = Physics.OverlapSphere(
+			playerCamera.transform.position,
+			gridDetectionRadius,
+			placementSlotLayer,
+			QueryTriggerInteraction.Collide);
+
+		foreach (Collider hit in hits)
+		{
+			if (hit == null)
+				continue;
+
+			RedshiftPlacementGrid grid =
+				hit.GetComponentInParent<RedshiftPlacementGrid>();
+
+			if (grid == null)
+				continue;
+
+			if (activeVisualGrids.Contains(grid))
+				continue;
+
+			activeVisualGrids.Add(grid);
+			grid.SetVisualsVisible(true);
+		}
+	}
+
+private void HideActivePlacementGrids()
+{
+    foreach (RedshiftPlacementGrid grid in activeVisualGrids)
+    {
+        if (grid != null)
+            grid.SetVisualsVisible(false);
+    }
+
+    activeVisualGrids.Clear();
+}
+
+
 }
