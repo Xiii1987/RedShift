@@ -26,6 +26,16 @@ public class RedshiftFirstPersonController : MonoBehaviour
     [SerializeField] private float minLookAngle = -80f;
     [SerializeField] private float maxLookAngle = 80f;
 
+	[Header("Startup Camera Lock")]
+	[SerializeField, Min(0f)]
+	private float startupCameraLockDuration = 2f;
+
+	[SerializeField]
+	private bool resetCameraPitchOnStart = true;
+
+	private float cameraUnlockTime;
+
+
     [Header("Head Bob")]
     [SerializeField] private bool useHeadBob = true;
     [SerializeField] private float walkBobSpeed = 8f;
@@ -60,18 +70,28 @@ public class RedshiftFirstPersonController : MonoBehaviour
 
     private Vector3 cameraEffectsStartLocalPosition;
 
-    private void Awake()
+   private void Awake()
+{
+    characterController = GetComponent<CharacterController>();
+
+    cameraUnlockTime =
+        Time.unscaledTime + startupCameraLockDuration;
+
+    if (resetCameraPitchOnStart && cameraPitchRoot != null)
     {
-        characterController = GetComponent<CharacterController>();
-
-        if (cameraEffectsRoot != null)
-        {
-            cameraEffectsStartLocalPosition = cameraEffectsRoot.localPosition;
-        }
-
-        Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
+        cameraPitch = 0f;
+        cameraPitchRoot.localRotation = Quaternion.identity;
     }
+
+    if (cameraEffectsRoot != null)
+    {
+        cameraEffectsStartLocalPosition =
+            cameraEffectsRoot.localPosition;
+    }
+
+    Cursor.lockState = CursorLockMode.Locked;
+    Cursor.visible = false;
+}
 
     private void Update()
 {
@@ -87,10 +107,13 @@ public class RedshiftFirstPersonController : MonoBehaviour
         HandleMovement();
     }
 
-    if (canLook)
-    {
-        HandleLook();
-    }
+    bool startupCameraLocked =
+    Time.unscaledTime < cameraUnlockTime;
+
+	if (canLook && !startupCameraLocked)
+	{
+		HandleLook();
+	}
 
     if (canMove)
     {
