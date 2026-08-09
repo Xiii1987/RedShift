@@ -13,7 +13,7 @@
 
 # Track C# scripts inside our scripts folder
 !Assets/Scripts/**/*.cs
-
+!Assets/Editor/**/*.cs
 # Keep Git configuration
 !.gitignore
 !.gitattributes
