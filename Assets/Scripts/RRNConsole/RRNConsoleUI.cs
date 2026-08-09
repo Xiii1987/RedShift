@@ -2,7 +2,6 @@ using System.Collections;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using StarterAssets;
 
 public class RRNConsoleUI : MonoBehaviour
 {
@@ -19,7 +18,7 @@ public class RRNConsoleUI : MonoBehaviour
     [SerializeField] private TextMeshProUGUI moneyText;
     [SerializeField] private TextMeshProUGUI researchPointsText;
     [SerializeField] private Button closeButton;
-	[SerializeField] private StarterAssetsInputs playerInput;
+
 
 	[Header("Top Bar Flash")]
 	[SerializeField] private Color normalMoneyColour = new Color32(0xD6, 0xD6, 0xD6, 255);
