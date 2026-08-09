@@ -108,8 +108,7 @@ public class NPCFaceController : MonoBehaviour
     private Vector3 leftBrowNeutralPosition;
     private Vector3 rightBrowNeutralPosition;
 
-    private Vector3 leftBrowNeutralEuler;
-    private Vector3 rightBrowNeutralEuler;
+
 
     private float currentTopLidX;
     private float currentBottomLidX;
@@ -125,30 +124,40 @@ public class NPCFaceController : MonoBehaviour
     private Coroutine blinkLoop;
     private Coroutine blinkRoutine;
     private Coroutine expressionRoutine;
+	
+	private Quaternion topLidRestRotation;
+	private Quaternion bottomLidRestRotation;
 
-    private void Awake()
+	private Quaternion leftBrowRestRotation;
+	private Quaternion rightBrowRestRotation;
+	
+
+   private void Awake()
+{
+    if (!ValidateReferences())
     {
-        if (!ValidateReferences())
-        {
-            enabled = false;
-            return;
-        }
-
-        leftBrowNeutralPosition = leftEyebrow.localPosition;
-        rightBrowNeutralPosition = rightEyebrow.localPosition;
-
-        leftBrowNeutralEuler = leftEyebrow.localEulerAngles;
-        rightBrowNeutralEuler = rightEyebrow.localEulerAngles;
-
-        ApplyPoseInstant(GetPose(currentExpression));
-
-		appliedExpression = currentExpression;
-
-		blinkAmount = 0f;
-		isInitialised = true;
-
-		ApplyFaceTransforms();
+        enabled = false;
+        return;
     }
+
+    leftBrowNeutralPosition = leftEyebrow.localPosition;
+    rightBrowNeutralPosition = rightEyebrow.localPosition;
+
+    topLidRestRotation = topLid.localRotation;
+    bottomLidRestRotation = bottomLid.localRotation;
+
+    leftBrowRestRotation = leftEyebrow.localRotation;
+    rightBrowRestRotation = rightEyebrow.localRotation;
+
+    ApplyPoseInstant(GetPose(currentExpression));
+
+    appliedExpression = currentExpression;
+
+    blinkAmount = 0f;
+    isInitialised = true;
+
+    ApplyFaceTransforms();
+}
 
     private void OnEnable()
     {
@@ -474,9 +483,19 @@ public class NPCFaceController : MonoBehaviour
             blinkAmount
         );
 
-        SetLidEulerX(topLid, finalTopX);
-        SetLidEulerX(bottomLid, finalBottomX);
+        SetLidRotation(
+    topLid,
+    topLidRestRotation,
+    finalTopX,
+    neutralPose.topLidX
+);
 
+SetLidRotation(
+    bottomLid,
+    bottomLidRestRotation,
+    finalBottomX,
+    neutralPose.bottomLidX
+);
         leftEyebrow.localPosition =
             leftBrowNeutralPosition +
             Vector3.up * currentBrowY;
@@ -485,34 +504,40 @@ public class NPCFaceController : MonoBehaviour
             rightBrowNeutralPosition +
             Vector3.up * currentBrowY;
 
-        leftEyebrow.localEulerAngles = new Vector3(
-            leftBrowNeutralEuler.x,
-            leftBrowNeutralEuler.y,
-            WrapAngle(
-                leftBrowNeutralEuler.z + currentLeftBrowZ
-            )
-        );
+   leftEyebrow.localRotation =
+    leftBrowRestRotation *
+    Quaternion.AngleAxis(
+        currentLeftBrowZ,
+        Vector3.forward
+    );
 
-        rightEyebrow.localEulerAngles = new Vector3(
-            rightBrowNeutralEuler.x,
-            rightBrowNeutralEuler.y,
-            WrapAngle(
-                rightBrowNeutralEuler.z + currentRightBrowZ
-            )
-        );
-    }
+rightEyebrow.localRotation =
+    rightBrowRestRotation *
+    Quaternion.AngleAxis(
+        currentRightBrowZ,
+        Vector3.forward
+    );
+	}
 
-    private void SetLidEulerX(Transform lid, float x)
-    {
-        // The eyelids are X-only objects.
-        // We deliberately never read their Euler angles back.
-        lid.localEulerAngles = new Vector3(
-            WrapAngle(x),
-            0f,
-            0f
-        );
-    }
 
+  private void SetLidRotation(
+    Transform lid,
+    Quaternion restRotation,
+    float targetX,
+    float neutralX)
+{
+    float offset = Mathf.DeltaAngle(
+        neutralX,
+        targetX
+    );
+
+    lid.localRotation =
+        restRotation *
+        Quaternion.AngleAxis(
+            offset,
+            Vector3.right
+        );
+}
     private float WrapAngle(float angle)
     {
         return Mathf.Repeat(angle, 360f);

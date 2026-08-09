@@ -9,6 +9,7 @@
 # Only track our scripts folder
 !Assets/Scripts/
 !Assets/Scripts/**/
+!Assets/Editor/**/
 
 # Track C# scripts inside our scripts folder
 !Assets/Scripts/**/*.cs
