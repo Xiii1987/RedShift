@@ -14,14 +14,27 @@ namespace Redshift.EditorTools
             Func<string, RedshiftAssetFlags> flagsForGuid)
         {
             string[] allAssets = RedshiftAssetUtility.GetProjectAssetPaths();
+            IReadOnlyList<string> healthIgnoredFolders = settings == null
+                ? Array.Empty<string>()
+                : settings.GetIgnoredAuditFolders();
+
+            // Project Health removes audit-ignored folders before checking naming.
+            // Asset Manager uses the same scope so the two naming-violation counts
+            // are directly comparable.
+            string[] scopedAssets = allAssets
+                .Where(path => !RedshiftAssetUtility.IsUnderAnyFolder(
+                    path,
+                    healthIgnoredFolders))
+                .ToArray();
+
             Dictionary<string, List<RedshiftMaterialTextureLink>> textureLinks =
-                BuildTextureMaterialLinks(allAssets);
+                BuildTextureMaterialLinks(scopedAssets);
             Dictionary<string, List<string>> materialTextures =
                 BuildMaterialTextureLists(textureLinks);
             HashSet<string> unusedTextures = BuildUnusedTextureSet(settings);
             var records = new List<RedshiftManagedAssetRecord>();
 
-            foreach (string path in allAssets)
+            foreach (string path in scopedAssets)
             {
                 RedshiftManagedAssetType type =
                     RedshiftNamingPolicy.GetAssetType(path);
@@ -294,8 +307,12 @@ namespace Redshift.EditorTools
                     new[] { "Materials", "Material" });
             }
 
+            // V2.1: the useful material-part token is the token immediately before
+            // the texture map type, not blindly the second underscore token.
+            // Table_Tabletop_Albedo -> Tabletop
+            // Aviators_AlbedoTransparency -> Aviators
             List<string> tokens = record.LinkedTextures
-                .Select(path => SecondTextureToken(path))
+                .Select(TextureIdentityToken)
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .ToList();
 
@@ -316,7 +333,7 @@ namespace Redshift.EditorTools
                 tokens.Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
 
             record.SuggestionReason = record.LinkedTextures.Count > 0
-                ? "MAT_ + folder above linked Textures + second underscore token from the texture name."
+                ? "MAT_ + folder above linked Textures + identity token immediately before the detected map type."
                 : "No linked texture evidence; parent-folder fallback used.";
         }
 
@@ -335,11 +352,7 @@ namespace Redshift.EditorTools
                         link.MaterialPath,
                         StringComparison.OrdinalIgnoreCase)))
                 .Where(material => material != null)
-                .Select(material => RedshiftNamingPolicy.StripLegacyPrefix(
-                    string.IsNullOrWhiteSpace(material.SuggestedName)
-                        ? material.Name
-                        : material.SuggestedName,
-                    false))
+                .Select(MaterialBaseForTexture)
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
@@ -366,9 +379,34 @@ namespace Redshift.EditorTools
                 }
             }
 
-            string materialBase = materialBases.Count > 0
-                ? materialBases[0]
-                : RedshiftNamingPolicy.StripLegacyPrefix(record.Name, false);
+            string materialBase;
+
+            if (materialBases.Count > 0)
+            {
+                materialBase = materialBases[0];
+            }
+            else
+            {
+                string owner = FolderAbove(record.Path, "Textures");
+                string identity = TextureIdentityToken(record.Path);
+
+                if (!string.IsNullOrWhiteSpace(owner) &&
+                    !string.IsNullOrWhiteSpace(identity) &&
+                    !owner.Equals(identity, StringComparison.OrdinalIgnoreCase))
+                {
+                    materialBase = owner + "_" + identity;
+                }
+                else if (!string.IsNullOrWhiteSpace(identity))
+                {
+                    materialBase = identity;
+                }
+                else
+                {
+                    materialBase = RedshiftNamingPolicy.StripLegacyPrefix(
+                        record.Name,
+                        false);
+                }
+            }
 
             string roleName = roles.Count > 0 ? roles[0] : string.Empty;
 
@@ -378,10 +416,35 @@ namespace Redshift.EditorTools
                     ? string.Empty
                     : "_" + roleName);
 
-            record.Ambiguous = materialBases.Count != 1 || roles.Count != 1;
+            record.Ambiguous = materialBases.Count > 1 || roles.Count != 1;
             record.SuggestionReason = materialBases.Count == 1 && roles.Count == 1
-                ? "T_ + linked material name + normalised texture type."
-                : "Material/type evidence is incomplete or conflicting; review the suggestion or override it.";
+                ? "T_ + linked material name + normalised texture type. Compliant material names are the naming authority."
+                : materialBases.Count == 0 && roles.Count == 1
+                    ? "No linked material authority; folder + texture identity + normalised map type fallback used."
+                    : "Material/type evidence is incomplete or conflicting; review the suggestion or override it.";
+        }
+
+        private static string MaterialBaseForTexture(
+            RedshiftManagedAssetRecord material)
+        {
+            // Once a material has already been brought into compliance, its real
+            // name is authoritative. Do not replace it with a fresh material
+            // suggestion derived from the old texture filename.
+            bool materialNameIsCompliant =
+                !string.IsNullOrWhiteSpace(material.ExpectedPrefix) &&
+                material.Name.StartsWith(
+                    material.ExpectedPrefix,
+                    StringComparison.OrdinalIgnoreCase);
+
+            string authority = materialNameIsCompliant
+                ? material.Name
+                : string.IsNullOrWhiteSpace(material.SuggestedName)
+                    ? material.Name
+                    : material.SuggestedName;
+
+            return RedshiftNamingPolicy.StripLegacyPrefix(
+                authority,
+                false);
         }
 
         private static void BuildPrefixSuggestion(
@@ -435,6 +498,11 @@ namespace Redshift.EditorTools
             RedshiftToolSettings settings)
         {
             var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (settings == null)
+            {
+                return result;
+            }
 
             try
             {
@@ -629,7 +697,7 @@ namespace Redshift.EditorTools
             return string.Empty;
         }
 
-        private static string SecondTextureToken(string texturePath)
+        private static string TextureIdentityToken(string texturePath)
         {
             string name = RedshiftNamingPolicy.StripLegacyPrefix(
                 Path.GetFileNameWithoutExtension(texturePath),
@@ -639,7 +707,29 @@ namespace Redshift.EditorTools
                 new[] { '_' },
                 StringSplitOptions.RemoveEmptyEntries);
 
-            return tokens.Length < 2 ? string.Empty : tokens[1];
+            if (tokens.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            // Walk backwards to find the map-type token. The identity token is the
+            // token immediately before it. This handles both "Table_Tabletop_Albedo"
+            // and "Aviators_AlbedoTransparency" without mistaking the map type for
+            // the material-part name.
+            for (int i = tokens.Length - 1; i >= 0; i--)
+            {
+                if (string.IsNullOrWhiteSpace(
+                    InferTextureRole(string.Empty, tokens[i])))
+                {
+                    continue;
+                }
+
+                return i > 0 ? tokens[i - 1] : string.Empty;
+            }
+
+            // No map-type token was recognised. Preserve the old second-token
+            // fallback where possible, otherwise use the only available token.
+            return tokens.Length >= 2 ? tokens[1] : tokens[0];
         }
 
         private static string MostCommon(IEnumerable<string> values)
