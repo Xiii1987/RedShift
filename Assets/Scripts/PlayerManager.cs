@@ -5,6 +5,9 @@ public class PlayerManager : MonoBehaviour
 {
     public static PlayerManager Instance { get; private set; }
 
+    [Header("Player Identity")]
+    [SerializeField] private string playerName = "Playername";
+
     [Header("Player Resources")]
     [SerializeField] private int startingMoney = 10000;
     [SerializeField] private int startingResearchPoints = 0;
@@ -14,6 +17,7 @@ public class PlayerManager : MonoBehaviour
 
     private int nextServerID = 1;
 
+    public string PlayerName => string.IsNullOrWhiteSpace(playerName) ? "Playername" : playerName;
     public int Money => startingMoney;
 	public int ResearchPoints => startingResearchPoints;
     public int ServerCount => ownedResearchServers.Count;
