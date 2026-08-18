@@ -70,11 +70,10 @@ public class RRNMailViewerUI : MonoBehaviour
     {
         bool hasResponses =
             email.Definition.responses != null &&
-            email.Definition.responses.Count > 0 &&
-            !email.HasResponded;
+            email.Definition.responses.Count > 0;
 
         if (responsePanel != null)
-            responsePanel.SetActive(hasResponses);
+            responsePanel.SetActive(true);
 
         if (responseButtons == null)
             return;
@@ -86,9 +85,12 @@ public class RRNMailViewerUI : MonoBehaviour
 
             if (hasResponses && i < email.Definition.responses.Count)
             {
-                responseButtons[i].Setup(
-                    email.Definition.responses[i],
-                    responseCallback);
+                RRNEmailResponseDefinition response = email.Definition.responses[i];
+
+                responseButtons[i].Setup(response, responseCallback);
+                responseButtons[i].SetLocked(
+                    email.HasResponded,
+                    email.HasResponded && response == email.SelectedResponse);
             }
             else
             {
@@ -97,9 +99,22 @@ public class RRNMailViewerUI : MonoBehaviour
         }
     }
 
-    public void HideResponses()
+    public void LockResponses(RRNReceivedEmail email)
     {
-        if (responsePanel != null)
-            responsePanel.SetActive(false);
+        if (email == null || responseButtons == null)
+            return;
+
+        for (int i = 0; i < responseButtons.Length; i++)
+        {
+            if (responseButtons[i] == null || !responseButtons[i].gameObject.activeSelf)
+                continue;
+
+            bool chosen =
+                email.Definition.responses != null &&
+                i < email.Definition.responses.Count &&
+                email.Definition.responses[i] == email.SelectedResponse;
+
+            responseButtons[i].SetLocked(true, chosen);
+        }
     }
 }
