@@ -1,7 +1,9 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 public class RRNMailManager : MonoBehaviour
 {
@@ -11,8 +13,14 @@ public class RRNMailManager : MonoBehaviour
     [SerializeField] private RRNEmailDatabase emailDatabase;
 
     [Header("Inbox")]
-    [SerializeField] private Transform inboxContent;
+    [SerializeField] private Transform unreadContent;
+    [SerializeField] private RectTransform archivedContent;
     [SerializeField] private RRNEmailEntryUI emailEntryPrefab;
+
+    [Header("Archive")]
+    [SerializeField] private Button archivedMailButton;
+    [SerializeField] private TMP_Text archivedMailButtonText;
+    [SerializeField] private float archiveFadeDuration = 0.2f;
 
     [Header("Counters")]
     [SerializeField] private TMP_Text unreadTitle;
@@ -45,11 +53,22 @@ public class RRNMailManager : MonoBehaviour
     private readonly List<ScheduledEmail> scheduledEmails = new();
 
     private RRNEmailEntryUI selectedEntry;
+    private CanvasGroup archivedCanvasGroup;
+    private bool archivedVisible;
+    private Coroutine archiveAnimation;
 
     private class ScheduledEmail
     {
         public RRNEmailDefinition email;
         public int deliveryMinute;
+    }
+
+    private void Awake()
+    {
+        SetupArchiveContainer();
+
+        if (archivedMailButton != null)
+            archivedMailButton.onClick.AddListener(ToggleArchivedMail);
     }
 
     private void OnEnable()
@@ -70,6 +89,27 @@ public class RRNMailManager : MonoBehaviour
             ScheduleNewDayFluff();
 
         UpdateCounters();
+        RefreshArchivedButton();
+    }
+
+    private void SetupArchiveContainer()
+    {
+        if (archivedContent == null)
+            return;
+
+        archivedCanvasGroup = archivedContent.GetComponent<CanvasGroup>();
+
+        if (archivedCanvasGroup == null)
+            archivedCanvasGroup = archivedContent.gameObject.AddComponent<CanvasGroup>();
+
+        archivedVisible = false;
+
+        Vector3 scale = archivedContent.localScale;
+        scale.y = 0f;
+        archivedContent.localScale = scale;
+
+        archivedCanvasGroup.alpha = 0f;
+        archivedContent.gameObject.SetActive(false);
     }
 
     public void SendEmailByID(string emailID)
@@ -129,14 +169,15 @@ public class RRNMailManager : MonoBehaviour
 
     private void SpawnInboxEntry(RRNReceivedEmail email)
     {
-        if (emailEntryPrefab == null || inboxContent == null)
+        if (emailEntryPrefab == null || unreadContent == null)
             return;
 
-        RRNEmailEntryUI entry = Instantiate(emailEntryPrefab, inboxContent);
+        RRNEmailEntryUI entry = Instantiate(emailEntryPrefab, unreadContent);
         entry.transform.SetAsFirstSibling();
         entry.Setup(email, HandleEntryClicked);
 
         entryUIs.Add(entry);
+        RebuildMailLayout();
     }
 
     private void HandleEntryClicked(RRNEmailEntryUI entry)
@@ -161,11 +202,12 @@ public class RRNMailManager : MonoBehaviour
         {
             mailViewer.DisplayEmail(
                 entry.Email,
-                response => HandleResponseSelected(entry.Email, response));
+                response => HandleResponseConfirmed(entry.Email, response),
+                () => ArchiveEmail(entry));
         }
     }
 
-    private void HandleResponseSelected(
+    private void HandleResponseConfirmed(
         RRNReceivedEmail email,
         RRNEmailResponseDefinition response)
     {
@@ -178,6 +220,125 @@ public class RRNMailManager : MonoBehaviour
             mailViewer.LockResponses(email);
 
         ExecuteResponse(response);
+    }
+
+    private void ArchiveEmail(RRNEmailEntryUI entry)
+    {
+        if (entry == null ||
+            entry.Email == null ||
+            entry.Email.IsArchived ||
+            archivedContent == null)
+        {
+            return;
+        }
+
+        entry.Email.MarkArchived();
+        entry.transform.SetParent(archivedContent, false);
+        entry.transform.SetAsFirstSibling();
+        entry.SetSelected(false);
+        selectedEntry = null;
+
+        RefreshArchivedButton();
+        RebuildMailLayout();
+
+        Debug.Log($"Mail archived: {entry.Email.Definition.subject}");
+    }
+
+    public void ToggleArchivedMail()
+    {
+        if (archivedContent == null)
+            return;
+
+        if (!archivedVisible && archivedContent.childCount == 0)
+            return;
+
+        archivedVisible = !archivedVisible;
+
+        if (archiveAnimation != null)
+            StopCoroutine(archiveAnimation);
+
+        archiveAnimation = StartCoroutine(AnimateArchivedMail(archivedVisible));
+        RefreshArchivedButton();
+    }
+
+    private IEnumerator AnimateArchivedMail(bool show)
+    {
+        if (archivedCanvasGroup == null || archivedContent == null)
+            yield break;
+
+        if (show)
+        {
+            archivedContent.gameObject.SetActive(true);
+
+            Vector3 startScale = archivedContent.localScale;
+            startScale.y = 0f;
+            archivedContent.localScale = startScale;
+
+            archivedCanvasGroup.alpha = 0f;
+        }
+
+        float elapsed = 0f;
+        float startAlpha = archivedCanvasGroup.alpha;
+        float targetAlpha = show ? 1f : 0f;
+        float startScaleY = archivedContent.localScale.y;
+        float targetScaleY = show ? 1f : 0f;
+
+        while (elapsed < archiveFadeDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+
+            float t = Mathf.Clamp01(elapsed / archiveFadeDuration);
+            t = t * t * (3f - 2f * t);
+
+            archivedCanvasGroup.alpha = Mathf.Lerp(startAlpha, targetAlpha, t);
+
+            Vector3 scale = archivedContent.localScale;
+            scale.y = Mathf.Lerp(startScaleY, targetScaleY, t);
+            archivedContent.localScale = scale;
+
+            RebuildMailLayout();
+            yield return null;
+        }
+
+        archivedCanvasGroup.alpha = targetAlpha;
+
+        Vector3 finalScale = archivedContent.localScale;
+        finalScale.y = targetScaleY;
+        archivedContent.localScale = finalScale;
+
+        if (!show)
+            archivedContent.gameObject.SetActive(false);
+
+        RebuildMailLayout();
+        archiveAnimation = null;
+    }
+
+    private void RefreshArchivedButton()
+    {
+        int archivedCount = archivedContent != null
+            ? archivedContent.childCount
+            : 0;
+
+        if (archivedMailButton != null)
+            archivedMailButton.interactable = archivedCount > 0;
+
+        if (archivedMailButtonText != null)
+        {
+            archivedMailButtonText.text = archivedVisible
+                ? "HIDE ARCHIVED MAIL"
+                : "SHOW ARCHIVED MAIL";
+        }
+    }
+
+    private void RebuildMailLayout()
+    {
+        if (unreadContent == null)
+            return;
+
+        RectTransform root = unreadContent.parent as RectTransform;
+
+        if (root != null)
+            LayoutRebuilder.ForceRebuildLayoutImmediate(root);
     }
 
     private void ExecuteResponse(RRNEmailResponseDefinition response)

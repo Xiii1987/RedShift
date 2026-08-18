@@ -39,7 +39,9 @@ public class RRNMailResponseButtonUI : MonoBehaviour,
     private bool isHovered;
     private bool isPressed;
     private bool isLocked;
-    private bool isChosen;
+    private bool isSelected;
+
+    public RRNEmailResponseDefinition Response => response;
 
     private void Awake()
     {
@@ -59,7 +61,7 @@ public class RRNMailResponseButtonUI : MonoBehaviour,
         isHovered = false;
         isPressed = false;
         isLocked = false;
-        isChosen = false;
+        isSelected = false;
 
         bool hasResponse = response != null && !string.IsNullOrWhiteSpace(response.buttonText);
         gameObject.SetActive(hasResponse);
@@ -76,10 +78,19 @@ public class RRNMailResponseButtonUI : MonoBehaviour,
         ApplyCurrentState();
     }
 
+    public void SetSelected(bool selected)
+    {
+        if (isLocked)
+            return;
+
+        isSelected = selected;
+        ApplyCurrentState();
+    }
+
     public void SetLocked(bool locked, bool chosen)
     {
         isLocked = locked;
-        isChosen = chosen;
+        isSelected = chosen;
         isHovered = false;
         isPressed = false;
 
@@ -94,7 +105,6 @@ public class RRNMailResponseButtonUI : MonoBehaviour,
         if (response == null || isLocked)
             return;
 
-        UISoundManager.Instance?.PlayConfirm();
         clickedCallback?.Invoke(response);
     }
 
@@ -137,16 +147,9 @@ public class RRNMailResponseButtonUI : MonoBehaviour,
 
     private void ApplyCurrentState()
     {
-        if (isLocked)
+        if (isLocked || isSelected)
         {
-            if (isChosen)
-            {
-                SetColours(highlightedBackgroundColour, highlightedOutlineColour, highlightedTextColour);
-            }
-            else
-            {
-                SetColours(normalBackgroundColour, lockedOutlineColour, lockedTextColour);
-            }
+            SetColours(highlightedBackgroundColour, highlightedOutlineColour, highlightedTextColour);
             return;
         }
 
