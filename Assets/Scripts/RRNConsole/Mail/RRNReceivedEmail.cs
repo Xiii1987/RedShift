@@ -7,6 +7,7 @@ public class RRNReceivedEmail
 
     public bool IsRead { get; private set; }
     public bool HasResponded { get; private set; }
+    public RRNEmailResponseDefinition SelectedResponse { get; private set; }
 
     public RRNReceivedEmail(
         RRNEmailDefinition definition,
@@ -19,6 +20,7 @@ public class RRNReceivedEmail
 
         IsRead = false;
         HasResponded = false;
+        SelectedResponse = null;
     }
 
     public void MarkRead()
@@ -26,8 +28,9 @@ public class RRNReceivedEmail
         IsRead = true;
     }
 
-    public void MarkResponded()
+    public void MarkResponded(RRNEmailResponseDefinition response)
     {
         HasResponded = true;
+        SelectedResponse = response;
     }
 }
