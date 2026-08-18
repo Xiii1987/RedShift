@@ -121,7 +121,6 @@ public class RRNMailManager : MonoBehaviour
         if (GameClock.Instance == null)
             return "09:00";
 
-        // Protect starting mail from Unity Start-order differences.
         if (GameClock.Instance.GetCurrentMinutes() <= 0)
             return "09:00";
 
@@ -173,10 +172,10 @@ public class RRNMailManager : MonoBehaviour
         if (email == null || response == null || email.HasResponded)
             return;
 
-        email.MarkResponded();
+        email.MarkResponded(response);
 
         if (mailViewer != null)
-            mailViewer.HideResponses();
+            mailViewer.LockResponses(email);
 
         ExecuteResponse(response);
     }
