@@ -19,14 +19,12 @@ public class RRNConsoleUI : MonoBehaviour
     [SerializeField] private TextMeshProUGUI researchPointsText;
     [SerializeField] private Button closeButton;
 
+    [Header("Top Bar Flash")]
+    [SerializeField] private Color normalMoneyColour = new Color32(0xD6, 0xD6, 0xD6, 255);
+    [SerializeField] private Color moneyFlashColour = new Color32(0x6F, 0xD1, 0x00, 255);
+    [SerializeField] private float moneyFlashSeconds = 1f;
 
-	[Header("Top Bar Flash")]
-	[SerializeField] private Color normalMoneyColour = new Color32(0xD6, 0xD6, 0xD6, 255);
-	[SerializeField] private Color moneyFlashColour = new Color32(0x6F, 0xD1, 0x00, 255);
-	[SerializeField] private float moneyFlashSeconds = 1f;
-
-	private Coroutine moneyFlashRoutine;
-
+    private Coroutine moneyFlashRoutine;
 
     [Header("Tab Buttons")]
     [SerializeField] private Button contractsButton;
@@ -54,9 +52,8 @@ public class RRNConsoleUI : MonoBehaviour
     [SerializeField] private Vector3 hiddenScale = new Vector3(0.98f, 0.98f, 1f);
     [SerializeField] private Vector3 visibleScale = Vector3.one;
 
-	[Header("Server Refresh")]
-	[SerializeField] private RRNServerSelectionPanel serverSelectionPanel;
-
+    [Header("Server Refresh")]
+    [SerializeField] private RRNServerSelectionPanel serverSelectionPanel;
 
     private ConsoleSection currentSection;
     private Coroutine transitionRoutine;
@@ -70,13 +67,18 @@ public class RRNConsoleUI : MonoBehaviour
 
     private void Start()
     {
-        if (playerManager == null)
+        CanvasGroup rootCanvasGroup = GetComponent<CanvasGroup>();
+        if (rootCanvasGroup != null)
         {
-            playerManager = FindAnyObjectByType<PlayerManager>();
+            rootCanvasGroup.alpha = 0f;
+            rootCanvasGroup.interactable = false;
+            rootCanvasGroup.blocksRaycasts = false;
         }
 
-        RefreshTopBar();
+        if (playerManager == null)
+            playerManager = FindAnyObjectByType<PlayerManager>();
 
+        RefreshTopBar();
         SetupStartingSection();
         SelectStartingButton();
     }
@@ -98,19 +100,14 @@ public class RRNConsoleUI : MonoBehaviour
     private CanvasGroup EnsureCanvasGroup(GameObject sectionObject)
     {
         if (sectionObject == null)
-        {
             return null;
-        }
 
         CanvasGroup canvasGroup = sectionObject.GetComponent<CanvasGroup>();
 
         if (canvasGroup == null)
-        {
             canvasGroup = sectionObject.AddComponent<CanvasGroup>();
-        }
 
         sectionObject.SetActive(true);
-
         return canvasGroup;
     }
 
@@ -127,19 +124,13 @@ public class RRNConsoleUI : MonoBehaviour
     private void RefreshTopBar()
     {
         if (playerManager == null)
-        {
             return;
-        }
 
         if (moneyText != null)
-        {
             moneyText.text = $"£ {playerManager.Money:N0}";
-        }
 
         if (researchPointsText != null)
-        {
             researchPointsText.text = $"RP {playerManager.ResearchPoints:N0}";
-        }
     }
 
     private void SetupStartingSection()
@@ -156,12 +147,9 @@ public class RRNConsoleUI : MonoBehaviour
     private void SetSectionInstant(GameObject sectionObject, bool visible)
     {
         if (sectionObject == null)
-        {
             return;
-        }
 
         sectionObject.SetActive(true);
-
         CanvasGroup canvasGroup = EnsureCanvasGroup(sectionObject);
 
         if (canvasGroup != null)
@@ -179,27 +167,19 @@ public class RRNConsoleUI : MonoBehaviour
         Button buttonToSelect = GetButtonForSection(startingSection);
 
         if (buttonToSelect != null)
-        {
             buttonToSelect.Select();
-        }
     }
 
     private Button GetButtonForSection(ConsoleSection section)
     {
         switch (section)
         {
-            case ConsoleSection.Contracts:
-                return contractsButton;
-            case ConsoleSection.ActiveJobs:
-                return activeJobsButton;
-            case ConsoleSection.ResearchPrograms:
-                return researchProgramsButton;
-            case ConsoleSection.Patents:
-                return patentsButton;
-            case ConsoleSection.Mail:
-                return mailButton;
-            default:
-                return null;
+            case ConsoleSection.Contracts: return contractsButton;
+            case ConsoleSection.ActiveJobs: return activeJobsButton;
+            case ConsoleSection.ResearchPrograms: return researchProgramsButton;
+            case ConsoleSection.Patents: return patentsButton;
+            case ConsoleSection.Mail: return mailButton;
+            default: return null;
         }
     }
 
@@ -207,43 +187,34 @@ public class RRNConsoleUI : MonoBehaviour
     {
         switch (section)
         {
-            case ConsoleSection.Contracts:
-                return contractsSection;
-            case ConsoleSection.ActiveJobs:
-                return activeJobsSection;
-            case ConsoleSection.ResearchPrograms:
-                return researchProgramsSection;
-            case ConsoleSection.Patents:
-                return patentsSection;
-            case ConsoleSection.Mail:
-                return mailSection;
-            default:
-                return null;
+            case ConsoleSection.Contracts: return contractsSection;
+            case ConsoleSection.ActiveJobs: return activeJobsSection;
+            case ConsoleSection.ResearchPrograms: return researchProgramsSection;
+            case ConsoleSection.Patents: return patentsSection;
+            case ConsoleSection.Mail: return mailSection;
+            default: return null;
         }
     }
 
-   public void ShowSection(ConsoleSection newSection)
-{
-    if (newSection == currentSection || isTransitioning)
+    public void ShowSection(ConsoleSection newSection)
     {
-        return;
+        if (newSection == currentSection || isTransitioning)
+            return;
+
+        UISoundManager.Instance?.PlayTabChange();
+
+        if (!useTransitions)
+        {
+            ShowSectionInstant(newSection);
+            return;
+        }
+
+        if (transitionRoutine != null)
+            StopCoroutine(transitionRoutine);
+
+        transitionRoutine = StartCoroutine(SwitchSectionRoutine(newSection));
     }
 
-    UISoundManager.Instance?.PlayTabChange();
-
-    if (!useTransitions)
-    {
-        ShowSectionInstant(newSection);
-        return;
-    }
-
-    if (transitionRoutine != null)
-    {
-        StopCoroutine(transitionRoutine);
-    }
-
-    transitionRoutine = StartCoroutine(SwitchSectionRoutine(newSection));
-}
     private void ShowSectionInstant(ConsoleSection newSection)
     {
         currentSection = newSection;
@@ -289,8 +260,7 @@ public class RRNConsoleUI : MonoBehaviour
             oldCanvasGroup,
             newSectionObject,
             newCanvasGroup,
-            transitionDuration
-        );
+            transitionDuration);
 
         if (oldCanvasGroup != null)
         {
@@ -300,9 +270,7 @@ public class RRNConsoleUI : MonoBehaviour
         }
 
         if (oldSectionObject != null)
-        {
             oldSectionObject.transform.localScale = hiddenScale;
-        }
 
         if (newCanvasGroup != null)
         {
@@ -312,9 +280,7 @@ public class RRNConsoleUI : MonoBehaviour
         }
 
         if (newSectionObject != null)
-        {
             newSectionObject.transform.localScale = visibleScale;
-        }
 
         currentSection = newSection;
         isTransitioning = false;
@@ -328,9 +294,7 @@ public class RRNConsoleUI : MonoBehaviour
         float duration)
     {
         if (duration <= 0f)
-        {
             yield break;
-        }
 
         float elapsedTime = 0f;
 
@@ -342,14 +306,10 @@ public class RRNConsoleUI : MonoBehaviour
             float smoothedProgress = SmoothStep(progress);
 
             if (oldCanvasGroup != null)
-            {
                 oldCanvasGroup.alpha = Mathf.Lerp(1f, 0f, smoothedProgress);
-            }
 
             if (newCanvasGroup != null)
-            {
                 newCanvasGroup.alpha = Mathf.Lerp(0f, 1f, smoothedProgress);
-            }
 
             if (oldSectionObject != null)
             {
@@ -372,106 +332,71 @@ public class RRNConsoleUI : MonoBehaviour
         return value * value * (3f - 2f * value);
     }
 
-    public void ShowContracts()
+    public void ShowContracts() => ShowSection(ConsoleSection.Contracts);
+    public void ShowActiveJobs() => ShowSection(ConsoleSection.ActiveJobs);
+    public void ShowResearchPrograms() => ShowSection(ConsoleSection.ResearchPrograms);
+    public void ShowPatents() => ShowSection(ConsoleSection.Patents);
+    public void ShowMail() => ShowSection(ConsoleSection.Mail);
+
+    public void OpenConsole()
     {
-        ShowSection(ConsoleSection.Contracts);
+        CanvasGroup canvasGroup = GetComponent<CanvasGroup>();
+
+        if (canvasGroup == null)
+            return;
+
+        canvasGroup.alpha = 1f;
+        canvasGroup.interactable = true;
+        canvasGroup.blocksRaycasts = true;
+
+        if (serverSelectionPanel == null)
+            serverSelectionPanel = GetComponentInChildren<RRNServerSelectionPanel>(true);
+
+        if (serverSelectionPanel != null)
+            serverSelectionPanel.RefreshServerList();
+
+        RedshiftPlayerStateController.Instance?.EnterUI();
     }
 
-    public void ShowActiveJobs()
+    public void CloseConsole()
     {
-        ShowSection(ConsoleSection.ActiveJobs);
+        CanvasGroup canvasGroup = GetComponent<CanvasGroup>();
+
+        if (canvasGroup == null)
+            return;
+
+        canvasGroup.alpha = 0f;
+        canvasGroup.interactable = false;
+        canvasGroup.blocksRaycasts = false;
+
+        RedshiftPlayerStateController.Instance?.EnterGameplay();
     }
 
-    public void ShowResearchPrograms()
+    private void OnEnable()
     {
-        ShowSection(ConsoleSection.ResearchPrograms);
+        ResearchServer.OnAnyContractCompleted += FlashMoneyText;
     }
 
-    public void ShowPatents()
+    private void OnDisable()
     {
-        ShowSection(ConsoleSection.Patents);
+        ResearchServer.OnAnyContractCompleted -= FlashMoneyText;
     }
 
-    public void ShowMail()
+    private void FlashMoneyText()
     {
-        ShowSection(ConsoleSection.Mail);
+        if (moneyText == null)
+            return;
+
+        if (moneyFlashRoutine != null)
+            StopCoroutine(moneyFlashRoutine);
+
+        moneyFlashRoutine = StartCoroutine(MoneyFlashRoutine());
     }
 
-public void OpenConsole()
-{
-    CanvasGroup canvasGroup = GetComponent<CanvasGroup>();
-
-    if (canvasGroup == null)
+    private IEnumerator MoneyFlashRoutine()
     {
-        return;
+        moneyText.color = moneyFlashColour;
+        yield return new WaitForSeconds(moneyFlashSeconds);
+        moneyText.color = normalMoneyColour;
     }
-
-    canvasGroup.alpha = 1f;
-    canvasGroup.interactable = true;
-    canvasGroup.blocksRaycasts = true;
-
-    if (serverSelectionPanel == null)
-    {
-        serverSelectionPanel = GetComponentInChildren<RRNServerSelectionPanel>(true);
-    }
-
-    if (serverSelectionPanel != null)
-    {
-        serverSelectionPanel.RefreshServerList();
-    }
-
-    RedshiftPlayerStateController.Instance?.EnterUI();
-}
-public void CloseConsole()
-{
-    CanvasGroup canvasGroup = GetComponent<CanvasGroup>();
-
-    if (canvasGroup == null)
-        return;
-
-    canvasGroup.alpha = 0f;
-    canvasGroup.interactable = false;
-    canvasGroup.blocksRaycasts = false;
-
-    RedshiftPlayerStateController.Instance?.EnterGameplay();
-}
-
-private void OnEnable()
-{
-    ResearchServer.OnAnyContractCompleted += FlashMoneyText;
-}
-
-private void OnDisable()
-{
-    ResearchServer.OnAnyContractCompleted -= FlashMoneyText;
-}
-
-private void FlashMoneyText()
-{
-    if (moneyText == null)
-        return;
-
-    if (moneyFlashRoutine != null)
-    {
-        StopCoroutine(moneyFlashRoutine);
-    }
-
-    moneyFlashRoutine = StartCoroutine(MoneyFlashRoutine());
-}
-
-private IEnumerator MoneyFlashRoutine()
-{
-    moneyText.color = moneyFlashColour;
-
-    yield return new WaitForSeconds(moneyFlashSeconds);
-
-    moneyText.color = normalMoneyColour;
-}
-
-
-
-
-
-
-
 }
