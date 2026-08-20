@@ -36,6 +36,8 @@ public class RRNMailViewerUI : MonoBehaviour
 
         if (archiveButton != null)
             archiveButton.onClick.AddListener(ArchiveCurrentEmail);
+
+        ClearDisplay();
     }
 
     public void DisplayEmail(
@@ -168,11 +170,12 @@ public class RRNMailViewerUI : MonoBehaviour
 
     private void ArchiveCurrentEmail()
     {
-        if (currentEmail == null || currentEmail.IsArchived)
+        if (currentEmail == null || currentEmail.IsArchived || !CanArchiveCurrentEmail())
             return;
 
         UISoundManager.Instance?.PlayConfirm();
         archiveCallback?.Invoke();
+        ClearDisplay();
     }
 
     public void LockResponses(RRNReceivedEmail email)
@@ -203,6 +206,61 @@ public class RRNMailViewerUI : MonoBehaviour
         RefreshActionButtons();
     }
 
+    public void ClearDisplay()
+    {
+        currentEmail = null;
+        pendingResponse = null;
+        confirmedResponseCallback = null;
+        archiveCallback = null;
+
+        if (fromText != null)
+            fromText.text = string.Empty;
+
+        if (toText != null)
+            toText.text = string.Empty;
+
+        if (subjectText != null)
+            subjectText.text = string.Empty;
+
+        if (typeText != null)
+            typeText.text = string.Empty;
+
+        if (dateText != null)
+            dateText.text = string.Empty;
+
+        if (contentPanelText != null)
+            contentPanelText.text = string.Empty;
+
+        if (departmentIcon != null)
+        {
+            departmentIcon.sprite = null;
+            departmentIcon.enabled = false;
+        }
+
+        if (responseButtons != null)
+        {
+            foreach (RRNMailResponseButtonUI button in responseButtons)
+            {
+                if (button != null)
+                    button.gameObject.SetActive(false);
+            }
+        }
+
+        RefreshActionButtons();
+    }
+
+    private bool CanArchiveCurrentEmail()
+    {
+        if (currentEmail == null || currentEmail.Definition == null)
+            return false;
+
+        bool hasResponses =
+            currentEmail.Definition.responses != null &&
+            currentEmail.Definition.responses.Count > 0;
+
+        return !hasResponses || currentEmail.HasResponded;
+    }
+
     private void RefreshActionButtons()
     {
         if (confirmButton != null)
@@ -217,7 +275,8 @@ public class RRNMailViewerUI : MonoBehaviour
         {
             archiveButton.interactable =
                 currentEmail != null &&
-                !currentEmail.IsArchived;
+                !currentEmail.IsArchived &&
+                CanArchiveCurrentEmail();
         }
     }
 }
