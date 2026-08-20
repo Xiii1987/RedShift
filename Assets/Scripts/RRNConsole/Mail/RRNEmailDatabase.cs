@@ -17,6 +17,13 @@ public enum RRNEmailResponseAction
     AddResearchPoints
 }
 
+public enum RRNEmailFollowUpTiming
+{
+    Immediate,
+    AfterDelay,
+    NextWorkingDay
+}
+
 [Serializable]
 public class RRNEmailResponseDefinition
 {
@@ -30,6 +37,14 @@ public class RRNEmailResponseDefinition
 
     [Tooltip("Used by actions such as AddMoney or AddResearchPoints.")]
     public int amount;
+
+    [Header("Follow-Up Timing")]
+    [Tooltip("Only used when the action is SendFollowUpEmail.")]
+    public RRNEmailFollowUpTiming followUpTiming = RRNEmailFollowUpTiming.Immediate;
+
+    [Min(1)]
+    [Tooltip("In-game minutes to wait when Follow Up Timing is After Delay.")]
+    public int followUpDelayMinutes = 60;
 }
 
 [Serializable]

@@ -9,6 +9,9 @@ public class RRNMailManager : MonoBehaviour
 {
     public static event Action<string> OnProgrammeAccepted;
 
+    private const int WorkDayStartMinute = 540;  // 09:00
+    private const int WorkDayEndMinute = 1080;   // 18:00
+
     [Header("Database")]
     [SerializeField] private RRNEmailDatabase emailDatabase;
 
@@ -51,15 +54,26 @@ public class RRNMailManager : MonoBehaviour
     private readonly List<RRNEmailEntryUI> entryUIs = new();
     private readonly HashSet<string> sentEmailIDs = new();
     private readonly List<ScheduledEmail> scheduledEmails = new();
+    private readonly List<ScheduledFollowUp> scheduledFollowUps = new();
 
     private RRNEmailEntryUI selectedEntry;
     private CanvasGroup archivedCanvasGroup;
     private bool archivedVisible;
     private Coroutine archiveAnimation;
 
+    private int currentDayIndex;
+    private int lastClockMinute = -1;
+
     private class ScheduledEmail
     {
         public RRNEmailDefinition email;
+        public int deliveryMinute;
+    }
+
+    private class ScheduledFollowUp
+    {
+        public string emailID;
+        public int deliveryDay;
         public int deliveryMinute;
     }
 
@@ -83,6 +97,9 @@ public class RRNMailManager : MonoBehaviour
 
     private void Start()
     {
+        if (GameClock.Instance != null)
+            lastClockMinute = GameClock.Instance.GetCurrentMinutes();
+
         SendStartingEmails();
 
         if (scheduleFluffOnStart)
@@ -98,16 +115,13 @@ public class RRNMailManager : MonoBehaviour
             return;
 
         archivedCanvasGroup = archivedContent.GetComponent<CanvasGroup>();
-
         if (archivedCanvasGroup == null)
             archivedCanvasGroup = archivedContent.gameObject.AddComponent<CanvasGroup>();
 
         archivedVisible = false;
-
         Vector3 scale = archivedContent.localScale;
         scale.y = 0f;
         archivedContent.localScale = scale;
-
         archivedCanvasGroup.alpha = 0f;
         archivedContent.gameObject.SetActive(false);
     }
@@ -121,7 +135,6 @@ public class RRNMailManager : MonoBehaviour
         }
 
         RRNEmailDefinition email = emailDatabase.GetEmailByID(emailID);
-
         if (email == null)
         {
             Debug.LogWarning($"RRNMailManager: Email ID '{emailID}' not found.");
@@ -149,7 +162,6 @@ public class RRNMailManager : MonoBehaviour
 
         inbox.Insert(0, receivedEmail);
         sentEmailIDs.Add(email.emailID);
-
         SpawnInboxEntry(receivedEmail);
         UpdateCounters();
 
@@ -158,10 +170,7 @@ public class RRNMailManager : MonoBehaviour
 
     private string GetCurrentMailTime()
     {
-        if (GameClock.Instance == null)
-            return "09:00";
-
-        if (GameClock.Instance.GetCurrentMinutes() <= 0)
+        if (GameClock.Instance == null || GameClock.Instance.GetCurrentMinutes() <= 0)
             return "09:00";
 
         return GameClock.Instance.GetCurrentTimeString();
@@ -175,7 +184,6 @@ public class RRNMailManager : MonoBehaviour
         RRNEmailEntryUI entry = Instantiate(emailEntryPrefab, unreadContent);
         entry.transform.SetAsFirstSibling();
         entry.Setup(email, HandleEntryClicked);
-
         entryUIs.Add(entry);
         RebuildMailLayout();
     }
@@ -207,9 +215,7 @@ public class RRNMailManager : MonoBehaviour
         }
     }
 
-    private void HandleResponseConfirmed(
-        RRNReceivedEmail email,
-        RRNEmailResponseDefinition response)
+    private void HandleResponseConfirmed(RRNReceivedEmail email, RRNEmailResponseDefinition response)
     {
         if (email == null || response == null || email.HasResponded)
             return;
@@ -222,15 +228,106 @@ public class RRNMailManager : MonoBehaviour
         ExecuteResponse(response);
     }
 
+    private void ExecuteResponse(RRNEmailResponseDefinition response)
+    {
+        switch (response.action)
+        {
+            case RRNEmailResponseAction.None:
+                break;
+
+            case RRNEmailResponseAction.SendFollowUpEmail:
+                HandleFollowUpResponse(response);
+                break;
+
+            case RRNEmailResponseAction.StartProgramme:
+                Debug.Log($"Programme accepted from mail: {response.targetID}");
+                OnProgrammeAccepted?.Invoke(response.targetID);
+                break;
+
+            case RRNEmailResponseAction.AddMoney:
+                PlayerManager.Instance?.AddMoney(response.amount);
+                break;
+
+            case RRNEmailResponseAction.AddResearchPoints:
+                PlayerManager.Instance?.AddResearchPoints(response.amount);
+                break;
+        }
+    }
+
+    private void HandleFollowUpResponse(RRNEmailResponseDefinition response)
+    {
+        if (string.IsNullOrWhiteSpace(response.targetID))
+            return;
+
+        switch (response.followUpTiming)
+        {
+            case RRNEmailFollowUpTiming.Immediate:
+                SendEmailByID(response.targetID);
+                break;
+
+            case RRNEmailFollowUpTiming.AfterDelay:
+                ScheduleFollowUpAfterDelay(response.targetID, Mathf.Max(1, response.followUpDelayMinutes));
+                break;
+
+            case RRNEmailFollowUpTiming.NextWorkingDay:
+                ScheduleFollowUp(response.targetID, currentDayIndex + 1, WorkDayStartMinute);
+                break;
+        }
+    }
+
+    private void ScheduleFollowUpAfterDelay(string emailID, int delayMinutes)
+    {
+        int currentMinute = GameClock.Instance != null
+            ? Mathf.Max(GameClock.Instance.GetCurrentMinutes(), WorkDayStartMinute)
+            : WorkDayStartMinute;
+
+        int deliveryDay = currentDayIndex;
+        int deliveryMinute = currentMinute + delayMinutes;
+
+        while (deliveryMinute > WorkDayEndMinute)
+        {
+            int overflow = deliveryMinute - WorkDayEndMinute;
+            deliveryDay++;
+            deliveryMinute = WorkDayStartMinute + overflow;
+        }
+
+        ScheduleFollowUp(emailID, deliveryDay, deliveryMinute);
+    }
+
+    private void ScheduleFollowUp(string emailID, int deliveryDay, int deliveryMinute)
+    {
+        scheduledFollowUps.Add(new ScheduledFollowUp
+        {
+            emailID = emailID,
+            deliveryDay = deliveryDay,
+            deliveryMinute = deliveryMinute
+        });
+
+        Debug.Log($"Follow-up mail scheduled: {emailID} for day {deliveryDay + 1} at {MinutesToTime(deliveryMinute)}");
+    }
+
+    private void DeliverDueFollowUps(int currentMinute)
+    {
+        for (int i = scheduledFollowUps.Count - 1; i >= 0; i--)
+        {
+            ScheduledFollowUp followUp = scheduledFollowUps[i];
+
+            bool due = currentDayIndex > followUp.deliveryDay ||
+                       (currentDayIndex == followUp.deliveryDay && currentMinute >= followUp.deliveryMinute);
+
+            if (!due)
+                continue;
+
+            string emailID = followUp.emailID;
+            scheduledFollowUps.RemoveAt(i);
+            SendEmailByID(emailID);
+        }
+    }
+
     private void ArchiveEmail(RRNEmailEntryUI entry)
     {
-        if (entry == null ||
-            entry.Email == null ||
-            entry.Email.IsArchived ||
-            archivedContent == null)
-        {
+        if (entry == null || entry.Email == null || entry.Email.IsArchived || archivedContent == null)
             return;
-        }
 
         entry.Email.MarkArchived();
         entry.transform.SetParent(archivedContent, false);
@@ -240,7 +337,6 @@ public class RRNMailManager : MonoBehaviour
 
         RefreshArchivedButton();
         RebuildMailLayout();
-
         Debug.Log($"Mail archived: {entry.Email.Definition.subject}");
     }
 
@@ -269,11 +365,9 @@ public class RRNMailManager : MonoBehaviour
         if (show)
         {
             archivedContent.gameObject.SetActive(true);
-
             Vector3 startScale = archivedContent.localScale;
             startScale.y = 0f;
             archivedContent.localScale = startScale;
-
             archivedCanvasGroup.alpha = 0f;
         }
 
@@ -286,12 +380,10 @@ public class RRNMailManager : MonoBehaviour
         while (elapsed < archiveFadeDuration)
         {
             elapsed += Time.unscaledDeltaTime;
-
             float t = Mathf.Clamp01(elapsed / archiveFadeDuration);
             t = t * t * (3f - 2f * t);
 
             archivedCanvasGroup.alpha = Mathf.Lerp(startAlpha, targetAlpha, t);
-
             Vector3 scale = archivedContent.localScale;
             scale.y = Mathf.Lerp(startScaleY, targetScaleY, t);
             archivedContent.localScale = scale;
@@ -301,7 +393,6 @@ public class RRNMailManager : MonoBehaviour
         }
 
         archivedCanvasGroup.alpha = targetAlpha;
-
         Vector3 finalScale = archivedContent.localScale;
         finalScale.y = targetScaleY;
         archivedContent.localScale = finalScale;
@@ -315,19 +406,13 @@ public class RRNMailManager : MonoBehaviour
 
     private void RefreshArchivedButton()
     {
-        int archivedCount = archivedContent != null
-            ? archivedContent.childCount
-            : 0;
+        int archivedCount = archivedContent != null ? archivedContent.childCount : 0;
 
         if (archivedMailButton != null)
             archivedMailButton.interactable = archivedCount > 0;
 
         if (archivedMailButtonText != null)
-        {
-            archivedMailButtonText.text = archivedVisible
-                ? "HIDE ARCHIVED MAIL"
-                : "SHOW ARCHIVED MAIL";
-        }
+            archivedMailButtonText.text = archivedVisible ? "HIDE ARCHIVED MAIL" : "SHOW ARCHIVED MAIL";
     }
 
     private void RebuildMailLayout()
@@ -336,35 +421,8 @@ public class RRNMailManager : MonoBehaviour
             return;
 
         RectTransform root = unreadContent.parent as RectTransform;
-
         if (root != null)
             LayoutRebuilder.ForceRebuildLayoutImmediate(root);
-    }
-
-    private void ExecuteResponse(RRNEmailResponseDefinition response)
-    {
-        switch (response.action)
-        {
-            case RRNEmailResponseAction.None:
-                break;
-
-            case RRNEmailResponseAction.SendFollowUpEmail:
-                SendEmailByID(response.targetID);
-                break;
-
-            case RRNEmailResponseAction.StartProgramme:
-                Debug.Log($"Programme accepted from mail: {response.targetID}");
-                OnProgrammeAccepted?.Invoke(response.targetID);
-                break;
-
-            case RRNEmailResponseAction.AddMoney:
-                PlayerManager.Instance?.AddMoney(response.amount);
-                break;
-
-            case RRNEmailResponseAction.AddResearchPoints:
-                PlayerManager.Instance?.AddResearchPoints(response.amount);
-                break;
-        }
     }
 
     public void ScheduleNewDayFluff()
@@ -378,10 +436,7 @@ public class RRNMailManager : MonoBehaviour
 
         foreach (RRNEmailDefinition email in emailDatabase.Emails)
         {
-            if (email == null)
-                continue;
-
-            if (email.deliveryType != RRNEmailDeliveryType.RandomFluff)
+            if (email == null || email.deliveryType != RRNEmailDeliveryType.RandomFluff)
                 continue;
 
             if (!email.allowRepeat && sentEmailIDs.Contains(email.emailID))
@@ -395,48 +450,29 @@ public class RRNMailManager : MonoBehaviour
 
         Shuffle(candidates);
 
-        int amount = UnityEngine.Random.Range(
-            minimumFluffPerDay,
-            maximumFluffPerDay + 1);
-
+        int amount = UnityEngine.Random.Range(minimumFluffPerDay, maximumFluffPerDay + 1);
         amount = Mathf.Clamp(amount, 0, candidates.Count);
-
         HashSet<int> usedTimes = new();
 
         for (int i = 0; i < amount; i++)
         {
-            int deliveryMinute = UnityEngine.Random.Range(
-                earliestFluffMinute,
-                latestFluffMinute + 1);
-
+            int deliveryMinute = UnityEngine.Random.Range(earliestFluffMinute, latestFluffMinute + 1);
             int safety = 0;
 
             while (usedTimes.Contains(deliveryMinute) && safety < 100)
             {
-                deliveryMinute = UnityEngine.Random.Range(
-                    earliestFluffMinute,
-                    latestFluffMinute + 1);
+                deliveryMinute = UnityEngine.Random.Range(earliestFluffMinute, latestFluffMinute + 1);
                 safety++;
             }
 
             usedTimes.Add(deliveryMinute);
-
-            scheduledEmails.Add(new ScheduledEmail
-            {
-                email = candidates[i],
-                deliveryMinute = deliveryMinute
-            });
+            scheduledEmails.Add(new ScheduledEmail { email = candidates[i], deliveryMinute = deliveryMinute });
         }
 
-        scheduledEmails.Sort(
-            (a, b) => a.deliveryMinute.CompareTo(b.deliveryMinute));
+        scheduledEmails.Sort((a, b) => a.deliveryMinute.CompareTo(b.deliveryMinute));
 
         foreach (ScheduledEmail scheduled in scheduledEmails)
-        {
-            Debug.Log(
-                $"Mail scheduled: {scheduled.email.subject} at " +
-                MinutesToTime(scheduled.deliveryMinute));
-        }
+            Debug.Log($"Mail scheduled: {scheduled.email.subject} at {MinutesToTime(scheduled.deliveryMinute)}");
     }
 
     private void HandleTimeChanged()
@@ -445,6 +481,13 @@ public class RRNMailManager : MonoBehaviour
             return;
 
         int currentMinute = GameClock.Instance.GetCurrentMinutes();
+
+        if (lastClockMinute >= 0 && currentMinute < lastClockMinute)
+            currentDayIndex++;
+
+        lastClockMinute = currentMinute;
+
+        DeliverDueFollowUps(currentMinute);
 
         for (int i = scheduledEmails.Count - 1; i >= 0; i--)
         {
@@ -459,7 +502,6 @@ public class RRNMailManager : MonoBehaviour
     private void UpdateCounters()
     {
         int unreadCount = 0;
-
         foreach (RRNReceivedEmail email in inbox)
         {
             if (!email.IsRead)
@@ -483,14 +525,12 @@ public class RRNMailManager : MonoBehaviour
     {
         string[] months =
         {
-            "JAN", "FEB", "MAR", "APR",
-            "MAY", "JUN", "JUL", "AUG",
-            "SEP", "OCT", "NOV", "DEC"
+            "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+            "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
         };
 
         int day = UnityEngine.Random.Range(1, 29);
         string month = months[UnityEngine.Random.Range(0, months.Length)];
-
         return $"{day:00} {month} {placeholderYear}";
     }
 
@@ -498,7 +538,6 @@ public class RRNMailManager : MonoBehaviour
     {
         int hour = minutes / 60;
         int minute = minutes % 60;
-
         return $"{hour:00}:{minute:00}";
     }
 
